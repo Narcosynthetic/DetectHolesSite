@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title></title>
+        <style>
+            * {
+                margin: 0;
+                padding: 0;
+            }
+            #map {
+                height: 500px;
+                width: 100%;
+            }
+        </style>
+
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+        <script src="https://www.gstatic.com/firebasejs/4.10.0/firebase.js"></script>
+
+    </head>
+
+    <body>
+        <div id="map">
+        </div>
+
+        <script>
+            /*
+             Project: Project Name
+             Authors: John
+             */
+            
+            function HashTable(obj)
+            {
+                this.length = 0;
+                this.items = {};
+                for (var p in obj) {
+                    if (obj.hasOwnProperty(p)) {
+                        this.items[p] = obj[p];
+                        this.length++;
+                    }
+                }
+
+                this.setItem = function(key, value)
+                {
+                    var previous = undefined;
+                    if (this.hasItem(key)) {
+                        previous = this.items[key];
+                    }
+                    else {
+                        this.length++;
+                    }
+                    this.items[key] = value;
+                    return previous;
+                }
+
+                this.getItem = function(key) {
+                    return this.hasItem(key) ? this.items[key] : undefined;
+                }
+
+                this.hasItem = function(key)
+                {
+                    return this.items.hasOwnProperty(key);
+                }
+
+                this.removeItem = function(key)
+                {
+                    if (this.hasItem(key)) {
+                        previous = this.items[key];
+                        this.length--;
+                        delete this.items[key];
+                        return previous;
+                    }
+                    else {
+                        return undefined;
+                    }
+                }
+
+                this.keys = function()
+                {
+                    var keys = [];
+                    for (var k in this.items) {
+                        if (this.hasItem(k)) {
+                            keys.push(k);
+                        }
+                    }
+                    return keys;
+                }
+
+                this.values = function()
+                {
+                    var values = [];
+                    for (var k in this.items) {
+                        if (this.hasItem(k)) {
+                            values.push(this.items[k]);
+                        }
+                    }
+                    return values;
+                }
+
+                this.each = function(fn) {
+                    for (var k in this.items) {
+                        if (this.hasItem(k)) {
+                            fn(k, this.items[k]);
+                        }
+                    }
+                }
+
+                this.clear = function()
+                {
+                    this.items = {}
+                    this.length = 0;
+                }
+            }
+            
+            
+            
+            // Create a closure to maintain scope of John_UI
+            (function (John_UI, $, window, document, undefined) {
+                'use strict';
+
+                $(function() {
+                    console.log("All resources finished loading!");                    
+                    John_UI.UI.init();
+                });
+
+                John_UI.UI = {
+                    init: function() {
+                        console.log('Initializing UI');                       
+                        John_UI.api.init();
+                    }
+                };
+
+                John_UI.api = {
+                    config: {
+                        apiKey: "AIzaSyDCjwGnS9syDWJOTDhZMLOc1-oJ9XfPyyk",
+                        authDomain: "detectionholes.firebaseapp.com",
+                        databaseURL: "https://detectionholes.firebaseio.com",
+                        projectId: "detectionholes",
+                        storageBucket: "detectionholes.appspot.com",
+                        messagingSenderId: "1048820244530"
+                    },
+                    locationsEndpoint: '/Hole',
+                    init: function() {
+                        console.log('Initializing Firebase');
+                        // Initialize Firebase
+                        window.firebase.initializeApp(John_UI.api.config);
+                        //John_UI.api.getLocations();
+                        John_UI.mapConfig.mapInit();
+                        John_UI.api.poll();
+                    },
+                    
+                    poll: function() {
+                        console.log('Poll started');
+                        
+                        //Create hash table to store location sums per region
+                        var htLocNames = new HashTable();
+                        var htLocCoordinates = new HashTable();
+                        
+                        setInterval(function() {
+                            John_UI.api.getLocations(htLocNames, htLocCoordinates);
+                        }, 7*1000);
+
+                    },
+                    
+                    getLocations: function(htLocNames, htLocCoordinates) {
+                        John_UI.api.clearLocations();                    
+                        
+                        
+                        console.log('Firebase query start');
+                        // Invoke Firebase query
+                        return window.firebase.database().ref().child(John_UI.api.locationsEndpoint).once('value').then(function(locations) {
+                            locations.forEach(function(location) {
+                                John_UI.mapConfig.locations.push({
+                                    key: location.val().g,
+                                    latitude: location.val().l[0],
+                                    longitude: location.val().l[1]
+                                });
+                            });
+                            console.log(John_UI.mapConfig.locations);
+                            console.log('Firebase query end');
+
+                            if($('#map').length > 0){
+  //                              John_UI.mapConfig.mapInit();
+                            }
+                            
+                            $.each(John_UI.mapConfig.markers, function (index, location) {
+                                John_UI.mapConfig.markers[index].setMap(null);
+                            });
+                            
+                            
+                            John_UI.mapConfig.markers = [];
+                            $.each(John_UI.mapConfig.locations, function (index, location) {
+                                John_UI.mapConfig.markers[index ] = new google.maps.Marker({
+                                    position: new google.maps.LatLng(location.latitude, location.longitude),
+                                    map: John_UI.mapConfig.map,
+                                    title: location.key
+                                });
+                                if(John_UI.mapConfig.geocoder == null)
+                                {
+                                    John_UI.mapConfig.geocoder = new google.maps.Geocoder;
+                                }
+                                
+                                var latlng = {lat:location.latitude, lng: location.longitude};
+                                
+                                //if for merged object
+                                if(!htLocCoordinates.hasItem(latlng)){
+                                
+                                John_UI.mapConfig.geocoder.geocode({'location': latlng}, function(results, status) {
+                                if (status === 'OK') {                                    
+                                    if (results[0]) {
+                                        
+                                        var filtered_array = results[0].address_components.filter(function(address_component){
+                                            return address_component.types.includes("administrative_area_level_3");
+                                        });
+                                        
+                                        var locationName = filtered_array.length ? filtered_array[0].long_name: "Μη αναγνωρίσημο";
+                                        
+                                        if (locationName)
+                                        {
+                                            if (htLocNames.hasItem(locationName)) {
+                                                //Increment existing location's total                                             
+                                                htLocNames.setItem(locationName, htLocNames.getItem(locationName) + 1);
+                                            }
+                                            else {
+                                                //Create new location item
+                                                htLocNames.setItem(locationName, 1);
+
+                                                //Create new merged item
+                                                htLocCoordinates.setItem(latlng, locationName);
+                                            }
+                                        }
+                                    }
+                                }
+                                else {
+                                    
+                                    //alert('Location not found: ' + status);
+                                    
+                                    /*
+                                    if (results[0]) {
+                                        var locationName = results[0].address_components[2].long_name;
+                                        alert('Undefined location: ' + locationName);
+                                    }
+                                    else {
+                                        alert('No result value');
+                                    }
+                                    */
+                                }
+                                });
+                            }
+                            
+                            });
+                            
+                            
+                            //alert('htLocNames length: ' + htLocNames.length);
+                            //alert('htLocCoordinates length: ' + htLocNames.length);
+
+                            
+                            /*
+                            for (var k in htLocNames.items) {
+                                if (htLocNames.hasItem(k)) {
+                                    alert('key is: ' + k + ', value is: ' + htLocNames.items[k]);
+                                }
+                            };
+                            */
+
+                        });
+                    },
+                    
+                    clearLocations: function() {
+                        if(John_UI.mapConfig.locations.length > 0){
+                            console.log(John_UI.mapConfig.locations.length + ' locations found');
+                            
+                            //TODO: remove all array items
+                            John_UI.mapConfig.locations = [];
+                            
+                            console.log('Locations Deleted');
+                        }
+                        //John_UI.mapConfig.locations.remove();
+                    }
+                };
+
+                John_UI.mapConfig = {
+                    // Map settings
+                    map:			null,
+                    mapKey:			'AIzaSyAYVYrSgfS2s_xZl2R2S5AMXST-BIyFwps',
+                    mapLatitude:	'37.973107',
+                    mapLongitude:	'23.726838',
+                    markerTitle:	'Athens - Greece',
+                    mapZoom:		10,
+                    mapCanvasId:	'map',
+                    GMapScriptURL:	'https://maps.googleapis.com/maps/api/js?sensor=false&key=',
+                    markers:		[],
+                    locations:      [],
+                    geocoder: null,
+                    mapInit: function() {
+                        console.log('Loading maps');
+                        $.getScript(John_UI.mapConfig.GMapScriptURL + John_UI.mapConfig.mapKey + "&callback=John_UI.mapConfig.showMap");
+                       
+                    },
+
+                    showMap: function() {
+                        
+                        console.log('Maps loaded');
+                        var windowHeight = $(window).height();
+                        var mapLatlng = new google.maps.LatLng(
+                                John_UI.mapConfig.mapLatitude,
+                                John_UI.mapConfig.mapLongitude
+                        );
+
+                        $('#' + John_UI.mapConfig.mapCanvasId).css('height', (windowHeight * 1) + 'px');
+
+                        var mapOptions = {
+                            center:		mapLatlng,
+                            mapTypeId:	google.maps.MapTypeId.ROADMAP,
+                            zoom:		John_UI.mapConfig.mapZoom
+                        };
+
+                        John_UI.mapConfig.map = new google.maps.Map(
+                                document.getElementById(John_UI.mapConfig.mapCanvasId),
+                                mapOptions
+                        );
+
+                        google.maps.event.addDomListener(window, "resize", function() {
+                            var newCenter = John_UI.mapConfig.map.getCenter();
+                            google.maps.event.trigger(John_UI.mapConfig.map, "resize");
+                            John_UI.mapConfig.map.setCenter(newCenter);
+                        });
+
+                        $.each(John_UI.mapConfig.locations, function (index, location) {
+                            John_UI.mapConfig.markers[index + 1] = new google.maps.Marker({
+                                position: new google.maps.LatLng(location.latitude, location.longitude),
+                                map: John_UI.mapConfig.map,
+                                title: location.key
+                            });
+                        });
+                        console.log(John_UI.mapConfig.markers);
+                        console.log('Map markers loaded');
+
+                        //loaded fully
+                        google.maps.event.addListenerOnce(John_UI.mapConfig.map, 'idle', function(){
+                            console.log('map loaded');
+                        });
+                    }
+                };
+
+            })(window.John_UI = window.John_UI || {}, jQuery, window, document);
+        </script>
+    </body>
+</html>
